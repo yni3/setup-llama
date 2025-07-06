@@ -252,7 +252,7 @@ runs:
         run: |
             $promptFile = "${{ runner.temp }}\llm_prompt.txt"
             $question = @"
-            ${{ github.event.inputs.question }}
+            ${{ inputs.question }}
             "@
             $question | Out-File -Encoding UTF8 $promptFile
 
