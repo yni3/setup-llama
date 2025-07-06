@@ -251,7 +251,10 @@ runs:
         shell: pwsh
         run: |
             $promptFile = "${{ runner.temp }}\llm_prompt.txt"
-            "${{ github.event.inputs.question }}" | Out-File -Encoding UTF8 $promptFile
+            $question = @"
+            ${{ github.event.inputs.question }}
+            "@
+            $question | Out-File -Encoding UTF8 $promptFile
 
       - name: Copy question file to temp
         if: ${{ inputs.question_file != '' && inputs.question_file != null }}
