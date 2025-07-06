@@ -1,0 +1,300 @@
+name: Setup llama.cpp
+description: Setup llama.cpp (Windows-only)
+branding:
+  icon: play
+  color: yellow
+inputs:
+    question:
+        description: 'question text'
+        default: "生成AIについて長く詳しく説明"
+        type: string
+    question_file:
+        description: 'Question text file path'
+        type: string
+    n-gpu-layers:
+        description: 'llama --n-gpu-layers N'
+        required: false
+        default: 50
+        type: number
+    ctx-size:
+        description: 'llama --ctx-size N'
+        required: false
+        default: 32768
+        type: number
+    model:
+        description: '.gguf model to use'
+        required: true
+        default: 'gemma-3-12b-it-q4_0'
+        type: choice
+        options:
+        - gemma-3-4b-it-q4_0
+        - gemma-3-12b-it-q4_0
+        - gemma-3-27b-it-q4_0
+        - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0
+        - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M
+        - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0
+        - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M
+        - Qwen3-30B-A3B-Q4_0
+        - Qwen3-30B-A3B-Q4_K_M
+    HUGGINGFACE_TOKEN:
+      description: 'Personal access token for accessing Hugging Face'
+      type: string
+      required: true
+
+outputs:
+  answer:
+    value: ${{ steps.out.outputs.answer }}
+
+runs:
+  using: "composite"
+  steps:
+      - name: Fail if not Windows
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: exit 1
+
+      - name: Check if NVIDIA GPU with >5GB is available
+        id: gpu_check
+        shell: pwsh
+        run: |
+            $env:PATH += ";C:\\Program Files\\NVIDIA Corporation\\NVSMI"
+            $hasNvidia = $false
+            if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+            $gpuInfo = nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits
+            foreach ($line in $gpuInfo) {
+                $fields = $line -split ","
+                $name = $fields[0].Trim()
+                $memMB = [int]$fields[1].Trim()
+                Write-Output "Detected GPU: $name (${memMB} MB)"
+                if ($memMB -ge 5120) {
+                $hasNvidia = $true
+                }
+            }
+            } else {
+            # fallback to CIM (supported in PowerShell Core)
+            $videoControllers = Get-CimInstance Win32_VideoController
+            foreach ($vc in $videoControllers) {
+                if ($vc.Name -match "NVIDIA") {
+                $vramMB = [int]($vc.AdapterRAM / 1MB)
+                Write-Output "Detected GPU (CIM): $($vc.Name) (${vramMB} MB)"
+                if ($vc.AdapterRAM -ge 5368709120) {
+                    $hasNvidia = $true
+                }
+                }
+            }
+            }
+            echo "nvidia_gpu=$hasNvidia" >> $env:GITHUB_OUTPUT
+
+      # nvidia gpu がある場合、プレビルド cuda バイナリをダウンロード
+      - name: Check llama binaries already built
+        id: llama_bin_check
+        shell: pwsh
+        run: |
+          $dll = if ('${{ steps.gpu_check.outputs.nvidia_gpu }}' -eq 'True') {
+            Join-Path $env:RUNNER_TOOL_CACHE "llama_cuda.cpp\bin\llama.dll"
+          } else {
+            Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp\bin\llama.dll"
+          }
+          if (Test-Path $dll) {
+            echo "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Download llama-cuda
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu == 'True' }}
+        shell: pwsh
+        run: |
+          $url = "https://github.com/ggml-org/llama.cpp/releases/download/b5827/llama-b5827-bin-win-cuda-12.4-x64.zip"
+          $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama_cuda.cpp\bin'
+          mkdir $dst -Force | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "cuda.zip"
+          Expand-Archive -Path "cuda.zip" -DestinationPath $dst
+
+      # cuda が利用できない場合、 msvc が利用できるなら native 最適化でビルド、利用できないなら cpu プレビルドを使う
+      - name: Check MSVC installation using vswhere
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' }}
+        id: msvc
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          $ErrorActionPreference = 'Stop'
+
+          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+          if (-not (Test-Path $vswherePath)) {
+            Write-Error "vswhere.exe not found. Visual Studio Installer may not be installed."
+            echo "exists=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          # VC++ツールがインストールされた Visual Studio のパスを取得
+          $installPath = & "$vswherePath" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+
+          if (-not $installPath) {
+            Write-Error "MSVC (VC++ Build Tools) is not installed."
+            echo "exists=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          Write-Host "MSVC installation found at: $installPath"
+          echo "exists=true" >> $env:GITHUB_OUTPUT
+
+      # llama プレビルドバイナリのダウンロード
+      - name: Download llama-cpu
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists != 'true' }}
+        shell: pwsh
+        run: |
+          $url = "https://github.com/ggml-org/llama.cpp/releases/download/b5827/llama-b5827-bin-win-cpu-x64.zip"
+          $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama.cpp\bin'
+          mkdir $dst -Force | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "llama-cpu.zip"
+          Expand-Archive -Path "llama-cpu.zip" -DestinationPath $dst
+
+      #llama の自前ビルド
+      - name: Download & extract CMake (if not exists)
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          $cmakePackage = "cmake-3.29.2-windows-x86_64"
+          $cmakeDir = "${{ runner.tool_cache }}\${cmakePackage}"
+          if (-Not (Test-Path $cmakeDir)) {
+            Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v3.29.2/${cmakePackage}.zip" -OutFile "cmake.zip"
+            Expand-Archive -Path "cmake.zip" -DestinationPath ${{ runner.tool_cache }}
+          } else {
+              Write-Host "using cache $cmakeDir" 
+          }
+
+      - name: Add CMake to PATH (permanent)
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          echo "${{ runner.tool_cache }}\cmake-3.29.2-windows-x86_64\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Check CMake versions
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          $ErrorActionPreference = 'Stop'
+          cmake --version
+
+      - name: Checkout llama.cpp at b5827
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: b5827
+          path: llama.cpp
+
+      - name: Build llama.cpp with MSVC
+        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          cd llama.cpp
+          New-Item -ItemType Directory -Path "build" -ErrorAction SilentlyContinue
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_NATIVE=ON
+          cmake --build . --config Release
+          cd ..
+          $dst = Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp\bin"
+          mkdir $dst -Force | Out-Null
+          Copy-Item .\build\bin\Release\*.exe $dst -Force
+          Copy-Item .\build\bin\Release\*.dll $dst -Force
+
+      - name: Download model
+        shell: pwsh
+        run: |
+          $modelId = "${{ inputs.model }}"
+          $dir = Join-Path $env:RUNNER_TOOL_CACHE "models"
+          if (-not (Test-Path $dir)) { mkdir $dir }
+          switch ($modelId) {
+            "gemma-3-4b-it-q4_0"   { $url = "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf"; $out = "gemma-3-4b-it-q4_0.gguf" }
+            "gemma-3-12b-it-q4_0"  { $url = "https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-gguf/resolve/main/gemma-3-12b-it-q4_0.gguf"; $out = "gemma-3-12b-it-q4_0.gguf" }
+            "gemma-3-27b-it-q4_0"  { $url = "https://huggingface.co/google/gemma-3-27b-it-qat-q4_0-gguf/resolve/main/gemma-3-27b-it-q4_0.gguf"; $out = "gemma-3-27b-it-q4_0.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf" }
+            "Qwen3-30B-A3B-Q4_0"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_0.gguf"; $out = "Qwen3-30B-A3B-Q4_0.gguf" }
+            "Qwen3-30B-A3B-Q4_K_M"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf"; $out = "Qwen3-30B-A3B-Q4_K_M.gguf" }
+            default { throw "Unknown model: $modelId" }
+          }
+          $path = Join-Path $dir $out
+          if (-not (Test-Path $path)) {
+            $hdr = @{ Authorization = "Bearer ${{ inputs.HUGGINGFACE_TOKEN }}" }
+            Invoke-WebRequest -Uri $url -Headers $hdr -OutFile $path
+          }
+          "MODEL_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set llama.dll path
+        if: ${{ steps.gpu_check.outputs.nvidia_gpu != 'True' }}
+        shell: pwsh
+        run: |
+          $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp\bin"
+          "LLAMA_CPP_LIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set llama.dll path (nvidia)
+        if: ${{ steps.gpu_check.outputs.nvidia_gpu == 'True' }}
+        shell: pwsh
+        run: |
+          $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama_cuda.cpp\bin"
+          "LLAMA_CPP_LIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Write question to file
+        if: ${{ inputs.question != '' && inputs.question != null }}
+        shell: pwsh
+        run: |
+            $promptFile = "${{ runner.temp }}\llm_prompt.txt"
+            "${{ github.event.inputs.question }}" | Out-File -Encoding UTF8 $promptFile
+
+      - name: Copy question file to temp
+        if: ${{ inputs.question_file != '' && inputs.question_file != null }}
+        shell: pwsh
+        run: |
+            $promptFile = "${{ runner.temp }}\llm_prompt.txt"
+            Copy-Item -Path "${{ inputs.question_file }}" -Destination $promptFile -Force
+            
+      - name: Run llama with model ${{ inputs.model }} (gpu=${{ steps.gpu_check.outputs.nvidia_gpu }})
+        shell: pwsh
+        run: |
+          chcp 65001
+
+          $exe = Join-Path $env:LLAMA_CPP_LIB_PATH "llama-cli.exe"
+          $model = $env:MODEL_PATH
+          $promptFile = "${{ runner.temp }}\llm_prompt.txt"
+          $outputFile = "${{ runner.temp }}\llm_output.txt"
+
+          $cmd = "& `"$exe`" --model `"$model`" --file `"$promptFile`""
+
+          # GPUオプションの条件付き付与
+          if ("${{ steps.gpu_check.outputs.nvidia_gpu }}" -eq "True") {
+            $cmd += " --n-gpu-layers ${{ inputs.n-gpu-layers }}"
+          }
+
+          $cmd += " --mirostat 2 -c ${{ inputs.ctx-size }} -no-cnv -n 8192"
+
+          Write-Host "Executing command:"
+          Write-Host $cmd
+
+          Invoke-Expression "$cmd > `"$outputFile`""
+
+      - name: Set outputs
+        run: |
+            $tempPath = Join-Path ${{ runner.temp }} "llm_output.txt"
+            if (-not (Test-Path -Path $tempPath)) {
+              Write-Error "❌ Log file does not exist at: $tempPath"
+              exit 0
+            }
+            $answer = Get-Content $tempPath -Raw
+            $delimiter = -join ((1..10) | %{(65..90) + (97..122) + (48..57) | Get-Random} | % {[char]$_})
+            Write-Output "answer<<${delimiter}" >> $env:GITHUB_OUTPUT
+            Write-Output ${answer} >> $env:GITHUB_OUTPUT
+            Write-Output "${delimiter}" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+        id: out
