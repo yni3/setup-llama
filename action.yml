@@ -11,10 +11,20 @@ inputs:
     question_file:
         description: 'Question text file path'
         type: string
+    batch-size:
+        description: 'llama --batch-size N'
+        required: false
+        default: 512
+        type: number
     n-gpu-layers:
         description: 'llama --n-gpu-layers N'
         required: false
         default: 50
+        type: number
+    seed:
+        description: 'llama --seed N, 0 = random'
+        required: false
+        default: 12345
         type: number
     ctx-size:
         description: 'llama --ctx-size N'
@@ -250,6 +260,7 @@ runs:
         if: ${{ inputs.question != '' && inputs.question != null }}
         shell: pwsh
         run: |
+            chcp 65001
             $promptFile = "${{ runner.temp }}\llm_prompt.txt"
             $question = @"
             ${{ inputs.question }}
@@ -273,11 +284,14 @@ runs:
           $promptFile = "${{ runner.temp }}\llm_prompt.txt"
           $outputFile = "${{ runner.temp }}\llm_output.txt"
 
-          $cmd = "& `"$exe`" --model `"$model`" --file `"$promptFile`""
+          $cmd = "& `"$exe`" --model `"$model`" --file `"$promptFile`" --no-display-prompt --batch-size ${{ inputs.batch-size }}"
 
           # GPUオプションの条件付き付与
           if ("${{ steps.gpu_check.outputs.nvidia_gpu }}" -eq "True") {
             $cmd += " --n-gpu-layers ${{ inputs.n-gpu-layers }}"
+          }
+          if ("${{ inputs.seed }}" -ne "0") {
+            $cmd += " --seed ${{ inputs.seed }}"
           }
 
           $cmd += " --mirostat 2 -c ${{ inputs.ctx-size }} -no-cnv -n 8192"
@@ -289,6 +303,7 @@ runs:
 
       - name: Set outputs
         run: |
+            chcp 65001
             $tempPath = Join-Path ${{ runner.temp }} "llm_output.txt"
             if (-not (Test-Path -Path $tempPath)) {
               Write-Error "❌ Log file does not exist at: $tempPath"
