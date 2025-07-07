@@ -31,6 +31,16 @@ inputs:
         required: false
         default: 32768
         type: number
+    mlock:
+        description: 'llama --mlock'
+        required: false
+        default: false
+        type: boolean
+    simple-io:
+        description: 'llama --simple-io'
+        required: false
+        default: false
+        type: boolean
     model:
         description: '.gguf model to use'
         required: true
@@ -292,6 +302,12 @@ runs:
           }
           if ("${{ inputs.seed }}" -ne "0") {
             $cmd += " --seed ${{ inputs.seed }}"
+          }
+          if ("${{ inputs.mlock }}" -eq "true") {
+            $cmd += " --mlock"
+          }
+          if ("${{ inputs.simple-io }}" -eq "true") {
+            $cmd += " --simple-io"
           }
 
           $cmd += " --mirostat 2 -c ${{ inputs.ctx-size }} -no-cnv -n 8192"
