@@ -26,6 +26,16 @@ inputs:
         required: false
         default: 12345
         type: number
+    threads:
+        description: 'llama --threads N, 0 = auto'
+        required: false
+        default: 0
+        type: number
+    predict:
+        description: 'llama --predict N'
+        required: false
+        default: 8192
+        type: number 
     ctx-size:
         description: 'llama --ctx-size N'
         required: false
@@ -50,10 +60,23 @@ inputs:
         - gemma-3-4b-it-q4_0
         - gemma-3-12b-it-q4_0
         - gemma-3-27b-it-q4_0
+        - gemma-3-27b-it-qat-IQ3_XXS
+        - gemma-3-27b-it-qat-IQ3_M
+        - gemma-3-27b-it-IQ3_XXS
+        - gemma-3-27b-it-IQ3_M
+        - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_XXS
+        - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_M
+        - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q3_K_M
         - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0
         - cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M
+        - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_XXS
+        - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_M
+        - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q3_K_M
         - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0
         - cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M
+        - Qwen3-30B-A3B-UD-IQ3_XXS
+        - Qwen3-30B-A3B-UD-Q3_K_XL
+        - Qwen3-30B-A3B-Q3_K_M
         - Qwen3-30B-A3B-Q4_0
         - Qwen3-30B-A3B-Q4_K_M
     HUGGINGFACE_TOKEN:
@@ -237,12 +260,30 @@ runs:
             "gemma-3-4b-it-q4_0"   { $url = "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf"; $out = "gemma-3-4b-it-q4_0.gguf" }
             "gemma-3-12b-it-q4_0"  { $url = "https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-gguf/resolve/main/gemma-3-12b-it-q4_0.gguf"; $out = "gemma-3-12b-it-q4_0.gguf" }
             "gemma-3-27b-it-q4_0"  { $url = "https://huggingface.co/google/gemma-3-27b-it-qat-q4_0-gguf/resolve/main/gemma-3-27b-it-q4_0.gguf"; $out = "gemma-3-27b-it-q4_0.gguf" }
+
+            "gemma-3-27b-it-qat-IQ3_XXS" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-qat-GGUF/resolve/main/google_gemma-3-27b-it-qat-IQ3_XXS.gguf"; $out = "google_gemma-3-27b-it-qat-IQ3_XXS.gguf" }
+            "gemma-3-27b-it-qat-IQ3_M" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-qat-GGUF/resolve/main/google_gemma-3-27b-it-qat-IQ3_M.gguf"; $out = "google_gemma-3-27b-it-qat-IQ3_M.gguf" }
+            "gemma-3-27b-it-IQ3_XXS" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-GGUF/resolve/main/google_gemma-3-27b-it-IQ3_XXS.gguf"; $out = "google_gemma-3-27b-it-IQ3_XXS.gguf" }
+            "gemma-3-27b-it-IQ3_M" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-GGUF/resolve/main/google_gemma-3-27b-it-IQ3_M.gguf"; $out = "google_gemma-3-27b-it-IQ3_M.gguf" }
+
+            "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_XXS"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_XXS.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_XXS.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-IQ3_M.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q3_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q3_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q3_K_M.gguf" }
             "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_0.gguf" }
             "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-32B-Japanese-Q4_K_M.gguf" }
-            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_0.gguf" }
+
+            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_XXS"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_XXS.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_XXS.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-IQ3_M.gguf" }
             "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q3_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q3_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q3_K_M.gguf" }
+            "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M"  { $url = "https://huggingface.co/mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf/resolve/main/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf"; $out = "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf" }
+
+            "Qwen3-30B-A3B-Q3_K_M"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q3_K_M.gguf"; $out = "Qwen3-30B-A3B-Q3_K_M.gguf" }
+            "Qwen3-30B-A3B-UD-Q3_K_XL"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-UD-Q3_K_XL.gguf"; $out = "Qwen3-30B-A3B-UD-Q3_K_XL.gguf" }
+            "Qwen3-30B-A3B-UD-IQ3_XXS"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-UD-IQ3_XXS.gguf"; $out = "Qwen3-30B-A3B-UD-IQ3_XXS.gguf" }
             "Qwen3-30B-A3B-Q4_0"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_0.gguf"; $out = "Qwen3-30B-A3B-Q4_0.gguf" }
             "Qwen3-30B-A3B-Q4_K_M"  { $url = "https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf"; $out = "Qwen3-30B-A3B-Q4_K_M.gguf" }
+
             default { throw "Unknown model: $modelId" }
           }
           $path = Join-Path $dir $out
@@ -303,6 +344,9 @@ runs:
           if ("${{ inputs.seed }}" -ne "0") {
             $cmd += " --seed ${{ inputs.seed }}"
           }
+          if ("${{ inputs.threads }}" -ne "0") {
+            $cmd += " --threads ${{ inputs.threads }}"
+          }
           if ("${{ inputs.mlock }}" -eq "true") {
             $cmd += " --mlock"
           }
@@ -310,7 +354,7 @@ runs:
             $cmd += " --simple-io"
           }
 
-          $cmd += " --mirostat 2 -c ${{ inputs.ctx-size }} -no-cnv -n 8192"
+          $cmd += " --mirostat 2 -c ${{ inputs.ctx-size }} -no-cnv -n ${{ inputs.predict }}"
 
           Write-Host "Executing command:"
           Write-Host $cmd
