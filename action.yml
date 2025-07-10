@@ -6,10 +6,11 @@ branding:
 inputs:
     question:
         description: 'question text'
-        default: "生成AIについて長く詳しく説明"
+        required: false
         type: string
     question_file:
         description: 'Question text file path'
+        required: false
         type: string
     batch-size:
         description: 'llama --batch-size N'
@@ -87,6 +88,8 @@ inputs:
 outputs:
   answer:
     value: ${{ steps.out.outputs.answer }}
+  exe:
+    value: ${{ steps.inference.outputs.exe }}
 
 runs:
   using: "composite"
@@ -95,6 +98,26 @@ runs:
         if: ${{ runner.os != 'Windows' }}
         shell: bash
         run: exit 1
+
+      - name: Check active session id
+        shell: pwsh
+        run: |
+          Add-Type -TypeDefinition @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class SessionHelper {
+              [DllImport("kernel32.dll")]
+              public static extern uint WTSGetActiveConsoleSessionId();
+          }
+          "@
+
+          $sessionId = [SessionHelper]::WTSGetActiveConsoleSessionId()
+          Write-Host "Active console session ID: $sessionId"
+
+          if ($sessionId -eq 0) {
+              Write-Error "No active console session found. Exiting with code 1."
+              exit 1
+          }
 
       - name: Check if NVIDIA GPU with >5GB is available
         id: gpu_check
@@ -133,30 +156,71 @@ runs:
         id: llama_bin_check
         shell: pwsh
         run: |
-          $dll = if ('${{ steps.gpu_check.outputs.nvidia_gpu }}' -eq 'True') {
-            Join-Path $env:RUNNER_TOOL_CACHE "llama_cuda.cpp\bin\llama.dll"
+          if ('${{ steps.gpu_check.outputs.nvidia_gpu }}' -eq 'True') {
+            if (Test-Path '${{ runner.tool_cache }}\cuda_dll\lib\x64\nvblas.lib') {
+                if (Test-Path '${{ runner.tool_cache }}\llama_cuda.cpp\bin\llama.dll') {
+                    echo "exists=true" >> $env:GITHUB_OUTPUT
+                }
+            }
           } else {
-            Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp\bin\llama.dll"
-          }
-          if (Test-Path $dll) {
-            echo "exists=true" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "exists=false" >> $env:GITHUB_OUTPUT
+            if (Test-Path '${{ runner.tool_cache }}\llama.cpp\bin\llama.dll') {
+                echo "exists=true" >> $env:GITHUB_OUTPUT
+            }
           }
 
+      - name: Download CUDA Runtime DLL ZIP
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu == 'True' }}
+        shell: pwsh
+        run: |
+          $extract = '${{ runner.tool_cache }}\cuda_dll'
+          $file = 'cuda_cudart-windows-x86_64-12.4.127-archive'
+          $zip = "${{ runner.temp }}\${file}.zip"
+          Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/${file}.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          # コピー（構造維持 + 上書きマージ）
+          Copy-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}\*" -Destination '${{ runner.tool_cache }}\cuda_dll' -Recurse -Force
+
+          # コピーが完了したら、元を削除
+          Remove-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}" -Recurse -Force
+
+          # cublas
+          $extract = '${{ runner.tool_cache }}\cuda_dll'
+          $file = 'libcublas-windows-x86_64-12.4.5.8-archive'
+          $zip = "${{ runner.temp }}\${file}.zip"
+          Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/${file}.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          # コピー（構造維持 + 上書きマージ）
+          Copy-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}\*" -Destination '${{ runner.tool_cache }}\cuda_dll' -Recurse -Force
+
+          # コピーが完了したら、元を削除
+          Remove-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}" -Recurse -Force
+
+      - name: set CUDA_PATH pass
+        if: ${{ steps.gpu_check.outputs.nvidia_gpu == 'True' }}
+        shell: pwsh
+        run: |
+          if (-not (Test-Path '${{ runner.tool_cache }}\cuda_dll\lib\x64')) {
+            exit 1
+          }
+          '${{ runner.tool_cache }}\cuda_dll\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          'CUDA_PATH=${{ runner.tool_cache }}\cuda_dll' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          'CUDA_PATH_V12_4=${{ runner.tool_cache }}\cuda_dll' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Download llama-cuda
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu == 'True' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu == 'True' }}
         shell: pwsh
         run: |
           $url = "https://github.com/ggml-org/llama.cpp/releases/download/b5827/llama-b5827-bin-win-cuda-12.4-x64.zip"
           $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama_cuda.cpp\bin'
           mkdir $dst -Force | Out-Null
           Invoke-WebRequest -Uri $url -OutFile "cuda.zip"
-          Expand-Archive -Path "cuda.zip" -DestinationPath $dst
+          Expand-Archive -Path "cuda.zip" -DestinationPath $dst -Force
 
       # cuda が利用できない場合、 msvc が利用できるなら native 最適化でビルド、利用できないなら cpu プレビルドを使う
       - name: Check MSVC installation using vswhere
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' }}
         id: msvc
         shell: pwsh
         run: |
@@ -187,7 +251,7 @@ runs:
 
       # llama プレビルドバイナリのダウンロード
       - name: Download llama-cpu
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists != 'true' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists != 'true' }}
         shell: pwsh
         run: |
           $url = "https://github.com/ggml-org/llama.cpp/releases/download/b5827/llama-b5827-bin-win-cpu-x64.zip"
@@ -198,7 +262,7 @@ runs:
 
       #llama の自前ビルド
       - name: Download & extract CMake (if not exists)
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -212,14 +276,14 @@ runs:
           }
 
       - name: Add CMake to PATH (permanent)
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
           echo "${{ runner.tool_cache }}\cmake-3.29.2-windows-x86_64\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       - name: Check CMake versions
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -227,7 +291,7 @@ runs:
           cmake --version
 
       - name: Checkout llama.cpp at b5827
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
         uses: actions/checkout@v4
         with:
           repository: ggml-org/llama.cpp
@@ -235,7 +299,7 @@ runs:
           path: llama.cpp
 
       - name: Build llama.cpp with MSVC
-        if: ${{ steps.llama_bin_check.outputs.exists == 'false' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
+        if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu != 'True' && steps.msvc.outputs.exists == 'true' }}
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -307,12 +371,18 @@ runs:
           $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama_cuda.cpp\bin"
           "LLAMA_CPP_LIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - id: generate_uuid
+        run: |
+          $uuid = [guid]::NewGuid().ToString()
+          "uuid=$uuid" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
       - name: Write question to file
         if: ${{ inputs.question != '' && inputs.question != null }}
         shell: pwsh
         run: |
             chcp 65001
-            $promptFile = "${{ runner.temp }}\llm_prompt.txt"
+            $promptFile = "${{ runner.temp }}\llm_prompt_${{ steps.generate_uuid.outputs.uuid }}.txt"
             $question = @"
             ${{ inputs.question }}
             "@
@@ -322,20 +392,28 @@ runs:
         if: ${{ inputs.question_file != '' && inputs.question_file != null }}
         shell: pwsh
         run: |
-            $promptFile = "${{ runner.temp }}\llm_prompt.txt"
+            $promptFile = "${{ runner.temp }}\llm_prompt_${{ steps.generate_uuid.outputs.uuid }}.txt"
             Copy-Item -Path "${{ inputs.question_file }}" -Destination $promptFile -Force
             
       - name: Run llama with model ${{ inputs.model }} (gpu=${{ steps.gpu_check.outputs.nvidia_gpu }})
+        id: inference
         shell: pwsh
         run: |
           chcp 65001
 
           $exe = Join-Path $env:LLAMA_CPP_LIB_PATH "llama-cli.exe"
           $model = $env:MODEL_PATH
-          $promptFile = "${{ runner.temp }}\llm_prompt.txt"
+          $promptFile = "${{ runner.temp }}\llm_prompt_${{ steps.generate_uuid.outputs.uuid }}.txt"
           $outputFile = "${{ runner.temp }}\llm_output.txt"
 
-          $cmd = "& `"$exe`" --model `"$model`" --file `"$promptFile`" --no-display-prompt --batch-size ${{ inputs.batch-size }}"
+          "exe=${exe}" >> $env:GITHUB_OUTPUT
+          
+          if (-not (Test-Path $promptFile)) {
+              Write-Host "Could not find the prompt file. Inference will be skipped."
+              exit 0
+          }
+
+          $cmd = "& `"$exe`" --model `"$model`" --file `"$promptFile`" --no-display-prompt --keep 0 --batch-size ${{ inputs.batch-size }}"
 
           # GPUオプションの条件付き付与
           if ("${{ steps.gpu_check.outputs.nvidia_gpu }}" -eq "True") {
@@ -366,7 +444,7 @@ runs:
             chcp 65001
             $tempPath = Join-Path ${{ runner.temp }} "llm_output.txt"
             if (-not (Test-Path -Path $tempPath)) {
-              Write-Error "❌ Log file does not exist at: $tempPath"
+              Write-Host "🚫Skipped. Log file does not exist at: $tempPath"
               exit 0
             }
             $answer = Get-Content $tempPath -Raw
