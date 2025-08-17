@@ -61,6 +61,8 @@ inputs:
         - gemma-3-4b-it-q4_0
         - gemma-3-12b-it-q4_0
         - gemma-3-27b-it-q4_0
+        - gemma-3-27b-it-qat-Q8_0
+        - gemma-3-27b-it-qat-IQ4_NL
         - gemma-3-27b-it-qat-IQ3_XXS
         - gemma-3-27b-it-qat-IQ3_M
         - gemma-3-27b-it-IQ3_XXS
@@ -328,6 +330,8 @@ runs:
             "gemma-3-12b-it-q4_0"  { $url = "https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-gguf/resolve/main/gemma-3-12b-it-q4_0.gguf"; $out = "gemma-3-12b-it-q4_0.gguf" }
             "gemma-3-27b-it-q4_0"  { $url = "https://huggingface.co/google/gemma-3-27b-it-qat-q4_0-gguf/resolve/main/gemma-3-27b-it-q4_0.gguf"; $out = "gemma-3-27b-it-q4_0.gguf" }
 
+            "gemma-3-27b-it-qat-Q8_0" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-qat-GGUF/resolve/main/google_gemma-3-27b-it-qat-Q8_0.gguf"; $out = "google_gemma-3-27b-it-qat-Q8_0.gguf" }
+            "gemma-3-27b-it-qat-IQ4_NL" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-qat-GGUF/resolve/main/google_gemma-3-27b-it-qat-IQ4_NL.gguf"; $out = "google_gemma-3-27b-it-qat-IQ4_NL.gguf" }
             "gemma-3-27b-it-qat-IQ3_XXS" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-qat-GGUF/resolve/main/google_gemma-3-27b-it-qat-IQ3_XXS.gguf"; $out = "google_gemma-3-27b-it-qat-IQ3_XXS.gguf" }
             "gemma-3-27b-it-qat-IQ3_M" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-qat-GGUF/resolve/main/google_gemma-3-27b-it-qat-IQ3_M.gguf"; $out = "google_gemma-3-27b-it-qat-IQ3_M.gguf" }
             "gemma-3-27b-it-IQ3_XXS" {  $url = "https://huggingface.co/bartowski/google_gemma-3-27b-it-GGUF/resolve/main/google_gemma-3-27b-it-IQ3_XXS.gguf"; $out = "google_gemma-3-27b-it-IQ3_XXS.gguf" }
