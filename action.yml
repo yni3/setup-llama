@@ -173,13 +173,13 @@ runs:
         shell: pwsh
         run: |
           if ('${{ steps.gpu_check.outputs.nvidia_gpu }}' -eq 'True') {
-            if (Test-Path '${{ runner.tool_cache }}\cuda_dll\lib\x64\nvblas.lib') {
-                if (Test-Path '${{ runner.tool_cache }}\llama_cuda.cpp\bin\llama.dll') {
+            if (Test-Path '${{ runner.tool_cache }}\cuda_dll_12.4\lib\x64\nvblas.lib') {
+                if (Test-Path '${{ runner.tool_cache }}\llama_cuda.cpp_${{ inputs.llama_version }}\bin\llama.dll') {
                     echo "exists=true" >> $env:GITHUB_OUTPUT
                 }
             }
           } else {
-            if (Test-Path '${{ runner.tool_cache }}\llama.cpp\bin\llama.dll') {
+            if (Test-Path '${{ runner.tool_cache }}\llama.cpp_${{ inputs.llama_version }}\bin\llama.dll') {
                 echo "exists=true" >> $env:GITHUB_OUTPUT
             }
           }
@@ -188,48 +188,48 @@ runs:
         if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu == 'True' }}
         shell: pwsh
         run: |
-          $extract = '${{ runner.tool_cache }}\cuda_dll'
+          $extract = '${{ runner.tool_cache }}\cuda_dll_12.4'
           $file = 'cuda_cudart-windows-x86_64-12.4.127-archive'
           $zip = "${{ runner.temp }}\${file}.zip"
           Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/${file}.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath $extract -Force
 
           # コピー（構造維持 + 上書きマージ）
-          Copy-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}\*" -Destination '${{ runner.tool_cache }}\cuda_dll' -Recurse -Force
+          Copy-Item -Path "${{ runner.tool_cache }}\cuda_dll_12.4\${file}\*" -Destination '${{ runner.tool_cache }}\cuda_dll_12.4' -Recurse -Force
 
           # コピーが完了したら、元を削除
-          Remove-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}" -Recurse -Force
+          Remove-Item -Path "${{ runner.tool_cache }}\cuda_dll_12.4\${file}" -Recurse -Force
 
           # cublas
-          $extract = '${{ runner.tool_cache }}\cuda_dll'
+          $extract = '${{ runner.tool_cache }}\cuda_dll_12.4'
           $file = 'libcublas-windows-x86_64-12.4.5.8-archive'
           $zip = "${{ runner.temp }}\${file}.zip"
           Invoke-WebRequest -Uri "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/${file}.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath $extract -Force
 
           # コピー（構造維持 + 上書きマージ）
-          Copy-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}\*" -Destination '${{ runner.tool_cache }}\cuda_dll' -Recurse -Force
+          Copy-Item -Path "${{ runner.tool_cache }}\cuda_dll_12.4\${file}\*" -Destination '${{ runner.tool_cache }}\cuda_dll_12.4' -Recurse -Force
 
           # コピーが完了したら、元を削除
-          Remove-Item -Path "${{ runner.tool_cache }}\cuda_dll\${file}" -Recurse -Force
+          Remove-Item -Path "${{ runner.tool_cache }}\cuda_dll_12.4\${file}" -Recurse -Force
 
       - name: set CUDA_PATH pass
         if: ${{ steps.gpu_check.outputs.nvidia_gpu == 'True' }}
         shell: pwsh
         run: |
-          if (-not (Test-Path '${{ runner.tool_cache }}\cuda_dll\lib\x64')) {
+          if (-not (Test-Path '${{ runner.tool_cache }}\cuda_dll_12.4\lib\x64')) {
             exit 1
           }
-          '${{ runner.tool_cache }}\cuda_dll\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          'CUDA_PATH=${{ runner.tool_cache }}\cuda_dll' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          'CUDA_PATH_V12_4=${{ runner.tool_cache }}\cuda_dll' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          '${{ runner.tool_cache }}\cuda_dll_12.4\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          'CUDA_PATH=${{ runner.tool_cache }}\cuda_dll_12.4' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          'CUDA_PATH_V12_4=${{ runner.tool_cache }}\cuda_dll_12.4' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Download llama-cuda
         if: ${{ steps.llama_bin_check.outputs.exists != 'true' && steps.gpu_check.outputs.nvidia_gpu == 'True' }}
         shell: pwsh
         run: |
           $url = "https://github.com/ggml-org/llama.cpp/releases/download/${{ inputs.llama_version }}/llama-${{ inputs.llama_version }}-bin-win-cuda-12.4-x64.zip"
-          $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama_cuda.cpp\bin'
+          $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama_cuda.cpp_${{ inputs.llama_version }}\bin'
           mkdir $dst -Force | Out-Null
           Invoke-WebRequest -Uri $url -OutFile "cuda.zip"
           Expand-Archive -Path "cuda.zip" -DestinationPath $dst -Force
@@ -271,7 +271,7 @@ runs:
         shell: pwsh
         run: |
           $url = "https://github.com/ggml-org/llama.cpp/releases/download/${{ inputs.llama_version }}/llama-${{ inputs.llama_version }}-bin-win-cpu-x64.zip"
-          $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama.cpp\bin'
+          $dst = Join-Path $env:RUNNER_TOOL_CACHE 'llama.cpp_${{ inputs.llama_version }}\bin'
           mkdir $dst -Force | Out-Null
           Invoke-WebRequest -Uri $url -OutFile "llama-cpu.zip"
           Expand-Archive -Path "llama-cpu.zip" -DestinationPath $dst
@@ -325,7 +325,7 @@ runs:
           cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_NATIVE=ON
           cmake --build . --config Release
           cd ..
-          $dst = Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp\bin"
+          $dst = Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp_${{ inputs.llama_version }}\bin"
           mkdir $dst -Force | Out-Null
           Copy-Item .\build\bin\Release\*.exe $dst -Force
           Copy-Item .\build\bin\Release\*.dll $dst -Force
@@ -437,14 +437,14 @@ runs:
         if: ${{ steps.gpu_check.outputs.nvidia_gpu != 'True' }}
         shell: pwsh
         run: |
-          $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp\bin"
+          $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama.cpp_${{ inputs.llama_version }}\bin"
           "LLAMA_CPP_LIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set llama.dll path (nvidia)
         if: ${{ steps.gpu_check.outputs.nvidia_gpu == 'True' }}
         shell: pwsh
         run: |
-          $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama_cuda.cpp\bin"
+          $dll = Join-Path $env:RUNNER_TOOL_CACHE "llama_cuda.cpp_${{ inputs.llama_version }}\bin"
           "LLAMA_CPP_LIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - id: generate_uuid
