@@ -60,7 +60,7 @@ inputs:
     model:
         description: '.gguf model to use'
         required: true
-        default: 'openai_gpt-oss-20b-MXFP4'
+        default: 'gemma-3-4b-it-q4_0'
         type: choice
         options:
         - gemma-3-4b-it-q4_0
