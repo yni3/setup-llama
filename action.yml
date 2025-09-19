@@ -480,13 +480,13 @@ runs:
           $exe = Join-Path $env:LLAMA_CPP_LIB_PATH "llama-cli.exe"
           $model = $env:MODEL_PATH
           $promptFile = "${{ runner.temp }}\llm_prompt_${{ steps.generate_uuid.outputs.uuid }}.txt"
-          $outputFile = "${{ runner.temp }}\llm_output.txt"
+          $outputFile = "${{ runner.temp }}\llm_output_${{ steps.generate_uuid.outputs.uuid }}.txt"
 
           "exe=${exe}" >> $env:GITHUB_OUTPUT
           
           if (-not (Test-Path $promptFile)) {
               Write-Host "Could not find the prompt file. Inference will be skipped."
-              exit 0
+              exit 1
           }
 
           $cmd = "& `"$exe`" --model `"$model`" --file `"$promptFile`" --no-display-prompt --keep 0 --batch-size ${{ inputs.batch-size }}"
@@ -518,10 +518,10 @@ runs:
       - name: Set outputs
         run: |
             chcp 65001
-            $tempPath = Join-Path ${{ runner.temp }} "llm_output.txt"
+            $tempPath = Join-Path ${{ runner.temp }} "llm_output_${{ steps.generate_uuid.outputs.uuid }}.txt"
             if (-not (Test-Path -Path $tempPath)) {
               Write-Host "🚫Skipped. Log file does not exist at: $tempPath"
-              exit 0
+              exit 1
             }
             $answer = Get-Content $tempPath -Raw
             $delimiter = -join ((1..10) | %{(65..90) + (97..122) + (48..57) | Get-Random} | % {[char]$_})
